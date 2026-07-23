@@ -213,14 +213,17 @@ async def handle_buttons(event):
         logger.info(f"SESSION_CANCEL: Session {session_key} was cancelled by starter.")
 
     elif action == "answer":
+        # data_parts[2] اکنون به‌جای متنِ کامل گزینه، ایندکس گزینه است
+        # (فیکس ButtonDataInvalidError برای گزینه‌های فارسی طولانی)
         await handle_answer(app, event, session_key, data_parts[2])
 
 def calculate_score(elapsed):
     return max(0, 20 - (int(elapsed) * 2))
 
-async def handle_answer(client, event, session_key, selected_option):
+async def handle_answer(client, event, session_key, selected_option_raw):
     session = game_sessions.get(session_key)
-    if not session: return
+    if not session:
+        return
     user_id = event.sender_id
     player = next((p for p in session["players"] if p["id"] == user_id), None)
     if not player:
@@ -232,6 +235,16 @@ async def handle_answer(client, event, session_key, selected_option):
     if user_id in session["responded_users"]:
         await event.answer("شما قبلاً به این سوال پاسخ داده‌اید!", alert=True)
         return
+
+    # ایندکس گزینه انتخاب‌شده را به متن واقعی گزینه تبدیل می‌کنیم
+    try:
+        selected_index = int(selected_option_raw)
+        selected_option = session["current_question_options"][selected_index]
+    except (ValueError, IndexError):
+        logger.error(f"ANSWER: Invalid option index '{selected_option_raw}' for session {session_key}")
+        await event.answer("خطایی رخ داد، دوباره تلاش کنید.", alert=True)
+        return
+
     session["responded_users"].add(user_id)
     q = session["questions"][session["current_q_index"]]
     correct_answer = q["answer"]
@@ -264,7 +277,14 @@ async def ask_question_in_chat(client, session_key):
     options_list = q["options"][:]
     random.shuffle(options_list)
     session["current_question_options"] = options_list
-    buttons = [types.KeyboardButtonCallback(text=opt, data=f"answer|{session_key}|{opt}".encode()) for opt in options_list]
+
+    # به‌جای فرستادن متنِ کامل گزینه در callback_data، فقط ایندکس آن فرستاده می‌شود.
+    # این کار طول callback_data را همیشه کوچک و ثابت نگه می‌دارد (زیر محدودیت ۶۴ بایتی
+    # تلگرام) صرف‌نظر از طول متن گزینه‌ها یا تعداد بازیکنان.
+    buttons = [
+        types.KeyboardButtonCallback(text=opt, data=f"answer|{session_key}|{i}".encode())
+        for i, opt in enumerate(options_list)
+    ]
     rows = [types.KeyboardButtonRow(buttons[i:i+2]) for i in range(0, len(buttons), 2)]
     markup = types.ReplyInlineMarkup(rows)
     question_text = (
