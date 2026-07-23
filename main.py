@@ -37,13 +37,32 @@ active_timeouts = {}
 import telethon
 logger.info(f"Telethon version: {telethon.__version__}")
 
+
 def cancel_timeout_task(session_key):
+    """
+    حذف/کنسل کردن تسک تایم‌اوت مربوط به یک سشن.
+
+    نکته‌ی مهم (فیکس باگ): وقتی این تابع از *داخل خودِ* تسک question_timeout
+    (چه مستقیم، چه از طریق ask_question_in_chat که همون تسک صداش می‌زنه)
+    فراخوانی بشه، تسکی که می‌خوایم کنسل کنیم همون تسکِ در حال اجراست.
+    اگر در این حالت واقعاً .cancel() صدا زده بشه، در اولین await بعدی
+    یک CancelledError پرتاب می‌شه و تسک بدون رسیدن به کد ادامه (رفتن به
+    سوال بعدی) متوقف می‌شه. برای همین در این حالت فقط از دیکشنری پاک
+    می‌کنیم و کاری به cancel واقعی نداریم.
+    """
     if session_key in active_timeouts:
         task = active_timeouts.pop(session_key)
+        if task is asyncio.current_task():
+            logger.info(
+                f"TASK_CANCEL: Session {session_key} timeout entry removed "
+                f"(self-reference from within its own task, not cancelling)."
+            )
+            return True
         task.cancel()
         logger.info(f"TASK_CANCEL: Timeout task for session {session_key} was cancelled and removed.")
         return True
     return False
+
 
 async def cleanup_old_sessions():
     try:
@@ -225,7 +244,6 @@ async def handle_answer(client, event, session_key, selected_option):
     await event.answer(response_text, alert=False)
     logger.info(f"ANSWER: User {user_id} in session {session_key} answered. Correct: {selected_option == correct_answer}. New score: {player['score']}")
 
-# ----------------- مهم: این دو تابع را اصلاح کن -----------------
 
 async def ask_question_in_chat(client, session_key):
     session = game_sessions.get(session_key)
@@ -280,11 +298,11 @@ async def question_timeout(client, session_key):
             f"آماده برای سوال بعدی..."
         )
         await edit_game_message(client, session, timeout_text, None)
-        
-        # اینجا current_q_index را زیاد کن
+
+        # current_q_index را زیاد کن
         session["current_q_index"] += 1
 
-        # قبل از رفتن به سوال بعدی، مطمئن شو تایمر قبلی پاک شده
+        # پاک کردن رفرنس تایمر قبلی (بدون self-cancel، چون خودِ همین تسکه)
         cancel_timeout_task(session_key)
 
         await asyncio.sleep(3)
