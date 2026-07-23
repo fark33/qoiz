@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 API_ID = os.environ.get('API_ID', '3335796')
 API_HASH = os.environ.get('API_HASH', '138b992a0e672e8346d8439c3f42ea78')
-BOT_TOKEN = os.environ.get('BOT_TOKEN', '8189638115:AAEYMDvummCXAPgdpavZbYHa3YuXpOzkRBY')
+BOT_TOKEN = os.environ.get('BOT_TOKEN', '8189638115:AAHJ-gXcWm6i25nSmpcr7QnTPAhf9nuOwF4')
 
 app = TelegramClient("watermark_bot", api_id=API_ID, api_hash=API_HASH)
 
